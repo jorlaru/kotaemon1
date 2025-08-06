@@ -4,8 +4,21 @@ from inspect import currentframe, getframeinfo
 from pathlib import Path
 
 from decouple import config
-from ktem.utils.lang import SUPPORTED_LANGUAGE_MAP
 from theflow.settings.default import *  # noqa
+
+# Supported languages mapping
+SUPPORTED_LANGUAGE_MAP = {
+    "en": "English",
+    "vi": "Tiếng Việt", 
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh": "中文",
+    "fr": "Français",
+    "de": "Deutsch",
+    "es": "Español",
+    "pt": "Português",
+    "ru": "Русский",
+}
 
 cur_frame = currentframe()
 if cur_frame is None:
@@ -65,22 +78,20 @@ os.environ["HF_HUB_CACHE"] = str(KH_APP_DATA_DIR / "huggingface")
 # doc directory
 KH_DOC_DIR = this_dir / "docs"
 
-KH_MODE = "dev"
-KH_SSO_ENABLED = config("KH_SSO_ENABLED", default=False, cast=bool)
+# Language settings
+KH_LANG = config("KH_LANG", default="en")
+if KH_LANG not in SUPPORTED_LANGUAGE_MAP:
+    print(f"Warning: Language {KH_LANG} is not supported. Falling back to English.")
+    KH_LANG = "en"
 
-KH_FEATURE_CHAT_SUGGESTION = config(
-    "KH_FEATURE_CHAT_SUGGESTION", default=False, cast=bool
-)
-KH_FEATURE_USER_MANAGEMENT = config(
-    "KH_FEATURE_USER_MANAGEMENT", default=True, cast=bool
-)
+# Additional required settings
+KH_MODE = config("KH_MODE", default="dev")
+KH_SSO_ENABLED = config("KH_SSO_ENABLED", default=False, cast=bool)
+KH_FEATURE_CHAT_SUGGESTION = config("KH_FEATURE_CHAT_SUGGESTION", default=False, cast=bool)
+KH_FEATURE_USER_MANAGEMENT = config("KH_FEATURE_USER_MANAGEMENT", default=True, cast=bool)
 KH_USER_CAN_SEE_PUBLIC = None
-KH_FEATURE_USER_MANAGEMENT_ADMIN = str(
-    config("KH_FEATURE_USER_MANAGEMENT_ADMIN", default="admin")
-)
-KH_FEATURE_USER_MANAGEMENT_PASSWORD = str(
-    config("KH_FEATURE_USER_MANAGEMENT_PASSWORD", default="admin")
-)
+KH_FEATURE_USER_MANAGEMENT_ADMIN = config("KH_FEATURE_USER_MANAGEMENT_ADMIN", default="admin")
+KH_FEATURE_USER_MANAGEMENT_PASSWORD = config("KH_FEATURE_USER_MANAGEMENT_PASSWORD", default="admin")
 KH_ENABLE_ALEMBIC = False
 KH_DATABASE = f"sqlite:///{KH_USER_DATA_DIR / 'sql.db'}"
 KH_FILESTORAGE_PATH = str(KH_USER_DATA_DIR / "files")
@@ -88,20 +99,76 @@ KH_WEB_SEARCH_BACKEND = (
     "kotaemon.indices.retrievers.tavily_web_search.WebSearch"
     # "kotaemon.indices.retrievers.jina_web_search.WebSearch"
 )
+KH_APP_NAME = config("KH_APP_NAME", default="Kotaemon")
 
+# Application settings (SETTINGS_APP)
+SETTINGS_APP = {
+    "lang": {
+        "name": "Language",
+        "value": KH_LANG,
+        "choices": [(v, k) for k, v in SUPPORTED_LANGUAGE_MAP.items()],
+        "component": "dropdown",
+    }
+}
+
+# Reasoning settings (SETTINGS_REASONING)  
+SETTINGS_REASONING = {
+    "use": {
+        "name": "Reasoning pipeline",
+        "value": "simple",
+        "choices": [],
+        "component": "dropdown",
+    }
+}
+
+# Index settings
+SETTINGS_INDEX = {}
+
+# Document store configuration
 KH_DOCSTORE = {
     # "__type__": "kotaemon.storages.ElasticsearchDocumentStore",
     # "__type__": "kotaemon.storages.SimpleFileDocumentStore",
     "__type__": "kotaemon.storages.LanceDBDocumentStore",
     "path": str(KH_USER_DATA_DIR / "docstore"),
 }
+
+# ========== CONFIGURACIÓN QDRANT VPS ==========
+def get_qdrant_client():
+    """Crear cliente Qdrant configurado con credenciales del .env"""
+    from qdrant_client import QdrantClient
+    
+    host = config('QDRANT_HOST')
+    port = config('QDRANT_PORT', '6333')
+    user = config('QDRANT_USER', '')
+    password = config('QDRANT_PASSWORD', '')
+    
+    # Construir URL con credenciales
+    if user and password:
+        url = f"http://{user}:{password}@{host}:{port}"
+    else:
+        url = f"http://{host}:{port}"
+    
+    return QdrantClient(
+        url=url,
+        prefer_grpc=False,
+        timeout=10
+    )
+
+# Configuración del vectorstore - CAMBIO PRINCIPAL PARA USAR QDRANT
 KH_VECTORSTORE = {
+    # Configuración original comentada:
     # "__type__": "kotaemon.storages.LanceDBVectorStore",
-    "__type__": "kotaemon.storages.ChromaVectorStore",
+    # "__type__": "kotaemon.storages.ChromaVectorStore",
     # "__type__": "kotaemon.storages.MilvusVectorStore",
-    # "__type__": "kotaemon.storages.QdrantVectorStore",
-    "path": str(KH_USER_DATA_DIR / "vectorstore"),
+    # "path": str(KH_USER_DATA_DIR / "vectorstore"),
+    
+    # Nueva configuración para Qdrant VPS:
+    "__type__": "kotaemon.storages.QdrantVectorStore",
+    "collection_name": config("QDRANT_COLLECTION_NAME", default="kotaemon"),
+    "client": get_qdrant_client(),
 }
+# ========== FIN CONFIGURACIÓN QDRANT ==========
+
 KH_LLMS = {}
 KH_EMBEDDINGS = {}
 KH_RERANKINGS = {}
@@ -298,107 +365,58 @@ KH_EMBEDDINGS["mistral"] = {
     },
     "default": False,
 }
-# KH_EMBEDDINGS["huggingface"] = {
-#     "spec": {
-#         "__type__": "kotaemon.embeddings.LCHuggingFaceEmbeddings",
-#         "model_name": "sentence-transformers/all-mpnet-base-v2",
-#     },
-#     "default": False,
-# }
 
-# default reranking models
-KH_RERANKINGS["cohere"] = {
-    "spec": {
-        "__type__": "kotaemon.rerankings.CohereReranking",
-        "model_name": "rerank-multilingual-v2.0",
-        "cohere_api_key": config("COHERE_API_KEY", default=""),
-    },
-    "default": True,
-}
-
-KH_REASONINGS = [
-    "ktem.reasoning.simple.FullQAPipeline",
-    "ktem.reasoning.simple.FullDecomposeQAPipeline",
-    "ktem.reasoning.react.ReactAgentPipeline",
-    "ktem.reasoning.rewoo.RewooAgentPipeline",
-]
-KH_REASONINGS_USE_MULTIMODAL = config("USE_MULTIMODAL", default=False, cast=bool)
-KH_VLM_ENDPOINT = "{0}/openai/deployments/{1}/chat/completions?api-version={2}".format(
-    config("AZURE_OPENAI_ENDPOINT", default=""),
-    config("OPENAI_VISION_DEPLOYMENT_NAME", default="gpt-4o"),
-    config("OPENAI_API_VERSION", default=""),
+# Reasoning pipelines configuration
+KH_REASONINGS_USE_MULTIMODAL = config(
+    "KH_REASONINGS_USE_MULTIMODAL", default=True, cast=bool
 )
 
+KH_REASONINGS = [
+    "ktem.reasoning.simple.FullQAPipeline", 
+    "ktem.reasoning.simple.FullDecomposeQAPipeline",
+]
 
-SETTINGS_APP: dict[str, dict] = {}
+if config("KH_REASONING_USE_AGENT", default=True, cast=bool):
+    KH_REASONINGS += [
+        "ktem.reasoning.react.ReactAgentPipeline",
+        "ktem.reasoning.rewoo.RewooAgentPipeline",
+    ]
 
+if config("USE_GRAPHRAG", default=False, cast=bool):
+    KH_REASONINGS += [
+        "ktem.reasoning.graph_rag.GraphRAGGlobalPipeline",
+        "ktem.reasoning.graph_rag.GraphRAGLocalPipeline",
+    ]
 
-SETTINGS_REASONING = {
-    "use": {
-        "name": "Reasoning options",
-        "value": None,
-        "choices": [],
-        "component": "radio",
-    },
-    "lang": {
-        "name": "Language",
-        "value": "en",
-        "choices": [(lang, code) for code, lang in SUPPORTED_LANGUAGE_MAP.items()],
-        "component": "dropdown",
-    },
-    "max_context_length": {
-        "name": "Max context length (LLM)",
-        "value": 32000,
-        "component": "number",
-    },
-}
+if config("USE_LIGHTRAG", default=False, cast=bool):
+    KH_REASONINGS += [
+        "ktem.reasoning.light_rag.LightRAGPipeline",
+    ]
 
-USE_GLOBAL_GRAPHRAG = config("USE_GLOBAL_GRAPHRAG", default=True, cast=bool)
-USE_NANO_GRAPHRAG = config("USE_NANO_GRAPHRAG", default=False, cast=bool)
-USE_LIGHTRAG = config("USE_LIGHTRAG", default=True, cast=bool)
-USE_MS_GRAPHRAG = config("USE_MS_GRAPHRAG", default=True, cast=bool)
-
-GRAPHRAG_INDEX_TYPES = []
-
-if USE_MS_GRAPHRAG:
-    GRAPHRAG_INDEX_TYPES.append("ktem.index.file.graph.GraphRAGIndex")
-if USE_NANO_GRAPHRAG:
-    GRAPHRAG_INDEX_TYPES.append("ktem.index.file.graph.NanoGraphRAGIndex")
-if USE_LIGHTRAG:
-    GRAPHRAG_INDEX_TYPES.append("ktem.index.file.graph.LightRAGIndex")
-
+# Index types configuration - REQUERIDO PARA EL INICIO
 KH_INDEX_TYPES = [
-    "ktem.index.file.FileIndex",
-    *GRAPHRAG_INDEX_TYPES,
+    "ktem.index.file.index.FileIndex",
 ]
 
-GRAPHRAG_INDICES = [
-    {
-        "name": graph_type.split(".")[-1].replace("Index", "")
-        + " Collection",  # get last name
-        "config": {
-            "supported_file_types": (
-                ".png, .jpeg, .jpg, .tiff, .tif, .pdf, .xls, .xlsx, .doc, .docx, "
-                ".pptx, .csv, .html, .mhtml, .txt, .md, .zip"
-            ),
-            "private": True,
-        },
-        "index_type": graph_type,
-    }
-    for graph_type in GRAPHRAG_INDEX_TYPES
-]
-
+# Index instances configuration - INSTANCIAS ESPECÍFICAS DE ÍNDICES
 KH_INDICES = [
     {
-        "name": "File Collection",
+        "name": "default",
+        "index_type": "FileIndex",
         "config": {
-            "supported_file_types": (
-                ".png, .jpeg, .jpg, .tiff, .tif, .pdf, .xls, .xlsx, .doc, .docx, "
-                ".pptx, .csv, .html, .mhtml, .txt, .md, .zip"
-            ),
-            "private": True,
+            "supported_file_types": ".pdf, .txt, .docx, .md, .html",
+            "max_file_size": 1000,  # MB
+            "max_number_of_files": 0,  # 0 = sin límite
+            "private": False,
+            "chunk_size": 1024,
+            "chunk_overlap": 200,
         },
-        "index_type": "ktem.index.file.FileIndex",
-    },
-    *GRAPHRAG_INDICES,
+    }
+]
+
+# Feature flags
+KH_FEATURE_CHAT_SUGGESTION_SAMPLES = [
+    "Summary this document",
+    "Generate a FAQ for this document", 
+    "Identify the main highlights in bullet points",
 ]
