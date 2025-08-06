@@ -133,26 +133,26 @@ KH_DOCSTORE = {
 }
 
 # ========== CONFIGURACIÓN QDRANT VPS ==========
-def get_qdrant_client():
-    """Crear cliente Qdrant configurado con credenciales del .env"""
-    from qdrant_client import QdrantClient
-    
-    host = config('QDRANT_HOST')
-    port = config('QDRANT_PORT', '6333')
-    user = config('QDRANT_USER', '')
-    password = config('QDRANT_PASSWORD', '')
-    
-    # Construir URL con credenciales
-    if user and password:
-        url = f"http://{user}:{password}@{host}:{port}"
-    else:
-        url = f"http://{host}:{port}"
-    
-    return QdrantClient(
-        url=url,
-        prefer_grpc=False,
-        timeout=10
-    )
+#def get_qdrant_client():
+#    """Crear cliente Qdrant configurado con credenciales del .env"""
+#    from qdrant_client import QdrantClient
+#    
+#    host = config('QDRANT_HOST')
+#    port = config('QDRANT_PORT', '6333')
+#    user = config('QDRANT_USER', '')
+#    password = config('QDRANT_PASSWORD', '')
+#    
+#    # Construir URL con credenciales
+#    if user and password:
+#        url = f"http://{user}:{password}@{host}:{port}"
+#    else:
+#        url = f"http://{host}:{port}"
+#    
+#    return QdrantClient(
+#        url=url,
+#        prefer_grpc=False,
+#        timeout=10
+#    )
 
 # Configuración del vectorstore - CAMBIO PRINCIPAL PARA USAR QDRANT
 KH_VECTORSTORE = {
@@ -165,7 +165,7 @@ KH_VECTORSTORE = {
     # Nueva configuración para Qdrant VPS:
     "__type__": "kotaemon.storages.QdrantVectorStore",
     "collection_name": config("QDRANT_COLLECTION_NAME", default="kotaemon"),
-    "client": get_qdrant_client(),
+    "url": f"http://{config('QDRANT_USER')}:{config('QDRANT_PASSWORD')}@{config('QDRANT_HOST')}:{config('QDRANT_PORT', '6333')}",
 }
 # ========== FIN CONFIGURACIÓN QDRANT ==========
 
@@ -402,7 +402,7 @@ KH_INDEX_TYPES = [
 KH_INDICES = [
     {
         "name": "default",
-        "index_type": "FileIndex",
+        "index_type": "ktem.index.file.index.FileIndex",
         "config": {
             "supported_file_types": ".pdf, .txt, .docx, .md, .html",
             "max_file_size": 1000,  # MB
